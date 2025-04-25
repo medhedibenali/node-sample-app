@@ -86,17 +86,10 @@ pipeline {
 
         stage('Deploy the app') {
             steps {
-                sh 'kubectl apply -f service.yaml'
                 sh '''
-                    if ! kubectl apply view-last-applied \
-                        -f deployment.yaml 1> /dev/null 2>&1; then
-                        kubectl apply -f deployment.yaml
-                    fi
-                '''
-                sh '''
-                    kubectl set image \
-                    deployments node-sample-app-deployment \
-                    node-sample-app=$registry:$dockerImage
+                    helm upgrade --install \
+                        --set image.tag=$BUILD_NUMBER \
+                        node-sample-app ./node-sample-app
                 '''
             }
         }
