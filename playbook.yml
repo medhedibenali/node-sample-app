@@ -1,0 +1,34 @@
+- name: Deploy the application
+  hosts: webservers
+  remote_user: ansible
+  vars:
+    tag: latest
+
+  tasks:
+  - name: Install Docker
+    become: true
+    community.general.zypper:
+      name: docker
+      state: present
+
+  - name: Start Docker
+    become: true
+    ansible.builtin.systemd_service:
+      name: docker.service
+      state: started
+
+  - name: Run the application container
+    become: true
+    community.general.docker_container:
+      name: node-sample-app
+      image: "medhedibenali/node-sample-app:{{ tag }}"
+      state: started
+      ports:
+        - "3000:3000"
+
+  - name: Prune images
+    become: true
+    community.general.docker_prune:
+      images: true
+      images_filters:
+        dangling: false

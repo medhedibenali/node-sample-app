@@ -3,7 +3,6 @@ pipeline {
         registry = 'medhedibenali/node-sample-app'
         registryCredential = 'docker_hub_id'
         dockerImage = ''
-        KUBECONFIG = credentials('kubeconfig_id')
     }
 
     agent any
@@ -11,7 +10,7 @@ pipeline {
     stages {
         stage('Clone the repository') {
             steps {
-                git url: 'https://github.com/medhedibenali/node-sample-app.git', branch: 'main'
+                git url: 'https://github.com/medhedibenali/node-sample-app.git', branch: 'dev'
             }
         }
 
@@ -21,39 +20,14 @@ pipeline {
             }
 
             steps {
-                sh '''
-                    ${nodeHome}/bin/node --test --experimental-test-coverage \
-                        --test-reporter=lcov --test-reporter-destination=lcov.info
-                '''
-            }
-        }
-
-        stage('Scan the code') {
-            environment {
-                scannerHome = tool 'Sonar'
-            }
-
-            steps {
-                script {
-                    withSonarQubeEnv('Default') {
-                        sh '${scannerHome}/bin/sonar-scanner'
-                    }
-                }
-            }
-        }
-
-        stage('Quality gate') {
-            steps {
-                timeout(time: 1, unit: 'HOURS') {
-                  waitForQualityGate abortPipeline: true
-                }
+                sh '${nodeHome}/bin/node --test'
             }
         }
 
         stage('Build the image') {
             steps{
                 script {
-                    dockerImage = docker.build registry + ":$BUILD_NUMBER"
+                    dockerImage = docker.build registry + ":$BUILD_NUMBER-dev"
                 }
             }
         }
@@ -80,16 +54,24 @@ pipeline {
 
         stage('Clean up') {
             steps {
-                sh 'docker rmi $registry:$BUILD_NUMBER'
+                sh 'docker rmi $registry:$BUILD_NUMBER-dev'
             }
         }
 
-        stage('Deploy the app') {
+        stage('Create the infrastructure') {
             steps {
+                sh 'tofu init'
+                sh 'tofu plan -var="ssh_key=$(cat $HOME/.ssh/id_ed25519.pub)" -out tfplan'
+                sh 'tofu apply tfplan'
+            }
+        }
+
+        stage('Deploy the application') {
+            steps {
+                sh 'echo "[webservers]\n$(tofu output -raw vm_ip)" > hosts'
                 sh '''
-                    helm upgrade --install \
-                        --set image.tag=$BUILD_NUMBER \
-                        node-sample-app ./node-sample-app
+                    ansible-playbook playbook.yml -i hosts \
+                        --extra-vars "tag=$BUILD_NUMBER-dev"
                 '''
             }
         }
